@@ -14,7 +14,10 @@ public class Bullet {
         if (y < 40) active = false;
     }
 
+    // FIX: draw() agora inclui o efeito de glow (estava duplicado no GamePanel)
     public void draw(Graphics2D g) {
+        g.setColor(new Color(255, 60, 0, 150));
+        g.fillRect(x - 1, y + 4, 7, 12);
         g.setColor(Color.YELLOW);
         g.fillRect(x, y, 5, 12);
     }

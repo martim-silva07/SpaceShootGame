@@ -1,18 +1,18 @@
 import java.awt.*;
-import java.util.Random;
 
 public class Star {
     public double x, y;
     int size;
 
-    public Star(int x, int y, double speed, int size) {
+    // FIX: removido parâmetro 'speed' que era recebido mas nunca usado
+    public Star(int x, int y, int size) {
         this.x = x;
         this.y = y;
         this.size = size;
     }
 
     public void update() {
-        // Removido o movimento para as estrelas ficarem estáticas
+        // Estrelas estáticas por design
     }
 
     public void draw(Graphics2D g) {

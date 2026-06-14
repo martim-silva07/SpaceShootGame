@@ -5,6 +5,13 @@ import java.util.*;
 import java.util.List;
 
 public class GamePanel extends JPanel implements ActionListener, KeyListener {
+
+    // Estados do jogo como constantes (sem magic numbers)
+    private static final int STATE_INTRO    = -1;
+    private static final int STATE_COLONY   =  0;
+    private static final int STATE_SPACE    =  1;
+    private static final int STATE_GAMEOVER =  2;
+
     private javax.swing.Timer timer;
     private Player player;
     private List<Bullet> bullets = new ArrayList<>();
@@ -41,7 +48,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private int healShipHp = 10;
     private final int HEAL_SHIP_MAX_HP = 10;
 
-    private int gameState = -1;
+    private int gameState = STATE_INTRO;
     private int introPage = 0;
 
     private final String[][] INTRO_TEXT = {
@@ -67,8 +74,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         setFocusable(true);
         addKeyListener(this);
 
+        // FIX: removido parâmetro speed desnecessário do Star
         for (int i = 0; i < 120; i++) {
-            stars.add(new Star(rand.nextInt(900), rand.nextInt(600), 0, rand.nextInt(3) + 1));
+            stars.add(new Star(rand.nextInt(900), rand.nextInt(600), rand.nextInt(3) + 1));
         }
 
         for (int row = 0; row < 2; row++) {
@@ -90,10 +98,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void update() {
-        if (gameState == -1) {
+        if (gameState == STATE_INTRO) {
             for (Star s : stars) s.update();
         }
-        else if (gameState == 0) {
+        else if (gameState == STATE_COLONY) {
             for (Star s : stars) s.update();
             if (seedShopOpen) return;
 
@@ -101,11 +109,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             for (CropPlot p : plots) p.update();
 
             if (player.y < 40) {
-                gameState = 1;
+                gameState = STATE_SPACE;
                 player.y = 500;
             }
         }
-        else if (gameState == 1) {
+        else if (gameState == STATE_SPACE) {
             for (Star s : stars) s.update();
 
             if (shopOpen) return;
@@ -129,12 +137,12 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             }
             healShips.removeIf(hs -> !hs.alive);
 
-            for (HeartItem h : hearts) h.update(); hearts.removeIf(h -> h.collected);
+            for (HeartItem h : hearts) h.update();
+            // FIX: hearts agora também são removidos quando saem do ecrã (sem leak de memória)
+            hearts.removeIf(h -> h.collected || h.y > 620);
 
-            for (Coin c : coins) {
-                c.y += 2;
-                c.update();
-            }
+            // FIX: movimento da coin movido para Coin.update()
+            for (Coin c : coins) c.update();
             coins.removeIf(c -> c.collected || c.y > 600);
 
             for (Particle p : particles) p.update(); particles.removeIf(p -> p.life <= 0);
@@ -175,6 +183,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                     b.active = false; en.enemyHp--;
                     if (en.enemyHp <= 0) {
                         en.alive = false; score += (en.type + 1) * 10;
+                        // FIX: partículas agora são spawned ao matar inimigos
+                        for (int p = 0; p < 8; p++)
+                            particles.add(new Particle(en.x + en.size / 2, en.y + en.size / 2));
                         if (!waitingForSystemChange) {
                             enemiesKilled++;
                             if (enemiesKilled >= KILLS_PER_LEVEL) {
@@ -197,7 +208,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 if (b.active && hs.alive && b.x > hs.x && b.x < hs.x + hs.width && b.y > hs.y && b.y < hs.y + hs.height) {
                     b.active = false;
                     healShipHp--;
-
                     if (healShipHp <= 0) {
                         hs.alive = false;
                         hearts.add(new HeartItem(hs.x + (hs.width / 2) - 10, hs.y + (hs.height / 2)));
@@ -219,8 +229,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private void resetGame() {
         enemies.clear(); bullets.clear(); coins.clear(); particles.clear(); healShips.clear(); hearts.clear(); lightnings.clear();
         coinCount = 5; score = 0; hp = 3; maxHp = 3; speedLevel = 0; fireLevel = 0; enemiesKilled = 0; currentPlanetIndex = 0;
-        waitingForSystemChange = false; shield = false; gameState = 0; player.x = 450; player.y = 500;
+        waitingForSystemChange = false; shield = false; player.x = 450; player.y = 500;
         seedShopOpen = false; activePlot = null;
+        // FIX: vai para ecrã de Game Over em vez de reiniciar imediatamente
+        gameState = STATE_GAMEOVER;
     }
 
     @Override
@@ -229,7 +241,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         Graphics2D g2 = (Graphics2D) g;
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        if (gameState == -1) {
+        if (gameState == STATE_INTRO) {
             g2.setColor(new Color(5, 5, 12));
             g2.fillRect(0, 0, 900, 600);
             for (Star s : stars) s.draw(g2);
@@ -245,12 +257,12 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             g2.setFont(new Font("Segoe UI", Font.ITALIC, 13)); g2.setColor(Color.GRAY);
             if (introPage < INTRO_TEXT.length - 1) g2.drawString("[ Press SPACE to continue reading ]", 350, 540);
         }
-        else if (gameState == 0) {
+        else if (gameState == STATE_COLONY) {
             g2.setColor(new Color(35, 24, 17));
             g2.fillRect(0, 0, 900, 600);
 
             g2.setColor(new Color(50, 36, 26));
-            for(int i=0; i<8; i++) g2.fillOval(i*140, (i%2)*200 + 100, 120, 45);
+            for (int i = 0; i < 8; i++) g2.fillOval(i * 140, (i % 2) * 200 + 100, 120, 45);
 
             for (CropPlot p : plots) p.draw(g2);
 
@@ -273,7 +285,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
             if (seedShopOpen) drawSeedShop(g2);
         }
-        else if (gameState == 1) {
+        else if (gameState == STATE_SPACE) {
             g2.setColor(PLANET_COLORS[currentPlanetIndex]);
             g2.fillRect(0, 0, 900, 600);
 
@@ -293,13 +305,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             }
 
             for (HeartItem h : hearts) h.draw(g2);
-
-            for (Bullet b : bullets) {
-                g2.setColor(new Color(255, 60, 0, 150));
-                g2.fillRect(b.x - 1, b.y + 4, 7, 12);
-                g2.setColor(Color.YELLOW);
-                g2.fillRect(b.x, b.y, 5, 12);
-            }
+            // FIX: partículas agora são desenhadas
+            for (Particle p : particles) p.draw(g2);
+            // FIX: usa Bullet.draw() em vez de código duplicado
+            for (Bullet b : bullets) b.draw(g2);
 
             for (Enemy e : enemies) e.draw(g2);
             player.draw(g2, shield);
@@ -307,6 +316,22 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             drawUI(g2);
 
             if (shopOpen) drawShop(g2);
+        }
+        // FIX: novo ecrã de Game Over
+        else if (gameState == STATE_GAMEOVER) {
+            g2.setColor(new Color(5, 5, 12));
+            g2.fillRect(0, 0, 900, 600);
+            for (Star s : stars) s.draw(g2);
+
+            g2.setFont(new Font("Segoe UI", Font.BOLD, 64));
+            g2.setColor(Color.RED);
+            String msg = "GAME OVER";
+            g2.drawString(msg, (900 - g2.getFontMetrics().stringWidth(msg)) / 2, 260);
+
+            g2.setFont(new Font("Segoe UI", Font.PLAIN, 20));
+            g2.setColor(Color.LIGHT_GRAY);
+            String sub = "[ PRESS SPACE TO RESTART ]";
+            g2.drawString(sub, (900 - g2.getFontMetrics().stringWidth(sub)) / 2, 330);
         }
     }
 
@@ -417,7 +442,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         g2.setFont(new Font("Lucida Console", Font.PLAIN, 16));
         g2.setColor(Color.YELLOW);
-        String coinsMsg = "AVAILABLE FUNDS: " + coinCount + " CAS";
+        String coinsMsg = "AVAILABLE FUNDS: " + coinCount + " CASH";
         g2.drawString(coinsMsg, (900 - g2.getFontMetrics().stringWidth(coinsMsg)) / 2, 175);
 
         g2.setColor(new Color(0, 255, 130, 60)); g2.drawLine(140, 195, 760, 195);
@@ -425,7 +450,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         int startY = 230; int spacing = 75;
         drawSeedItem(g2, startY, "1", "TERRA CARROT SEEDS", "Standard earth crop. Yields basic biomass.", "2 COINS", new Color(0, 255, 150), true);
         drawSeedItem(g2, startY + spacing, "2", "COSMIC BIO-REAGENT", "[ LOCKED - FUTURE UPGRADE ]", "5 COINS", Color.GRAY, false);
-        drawSeedItem(g2, startY + (spacing * 2), "3", "QUANTUM SUNFLOWER SEEDS", "[ LOCKED - FUTURE UPGRADE ]", "10 COINS", Color.GRAY, false);
+        drawSeedItem(g2, startY + (spacing * 2), "3", "QUANTUM BLUEBERRIES SEEDS", "[ LOCKED - FUTURE UPGRADE ]", "10 COINS", Color.GRAY, false);
 
         g2.setColor(new Color(0, 255, 130, 80)); g2.drawLine(140, 460, 760, 460);
         g2.setFont(new Font("Courier New", Font.ITALIC | Font.BOLD, 15));
@@ -470,7 +495,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         g2.setFont(new Font("Lucida Console", Font.PLAIN, 16));
         g2.setColor(Color.YELLOW);
-        String coinsMsg = "CREDITS SYNCED: " + coinCount + " CAS";
+        String coinsMsg = "CREDITS SYNCED: " + coinCount + " CASH";
         g2.drawString(coinsMsg, 450 - (g2.getFontMetrics().stringWidth(coinsMsg) / 2), 175);
 
         g2.setColor(new Color(0, 220, 255, 80)); g2.drawLine(140, 195, 760, 195);
@@ -515,21 +540,27 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     public void keyPressed(KeyEvent e) {
         int k = e.getKeyCode();
 
-        if (gameState == -1) {
+        // FIX: novo handler para o ecrã de Game Over
+        if (gameState == STATE_GAMEOVER) {
+            if (k == KeyEvent.VK_SPACE) gameState = STATE_COLONY;
+            return;
+        }
+
+        if (gameState == STATE_INTRO) {
             if (k == KeyEvent.VK_SPACE) {
                 if (introPage < INTRO_TEXT.length - 1) introPage++;
-                else { gameState = 0; player.x = 450; player.y = 500; }
+                else { gameState = STATE_COLONY; player.x = 450; player.y = 500; }
             }
             return;
         }
 
         if (k == KeyEvent.VK_E) {
-            if (gameState == 1) shopOpen = !shopOpen;
-            if (gameState == 0 && seedShopOpen) { seedShopOpen = false; activePlot = null; }
+            if (gameState == STATE_SPACE) shopOpen = !shopOpen;
+            if (gameState == STATE_COLONY && seedShopOpen) { seedShopOpen = false; activePlot = null; }
             return;
         }
 
-        if (gameState == 0 && seedShopOpen) {
+        if (gameState == STATE_COLONY && seedShopOpen) {
             if (k == KeyEvent.VK_F) { seedShopOpen = false; activePlot = null; return; }
             if (k == KeyEvent.VK_1 || k == KeyEvent.VK_NUMPAD1) {
                 if (coinCount >= 2 && activePlot != null && activePlot.state == 0) {
@@ -542,7 +573,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
 
-        if (gameState == 1 && k == KeyEvent.VK_Q) {
+        if (gameState == STATE_SPACE && k == KeyEvent.VK_Q) {
             int px = player.x + 20;
             int py = player.y + 20;
             double dist = Math.sqrt(Math.pow(px - 450, 2) + Math.pow(py - 300, 2));
@@ -560,7 +591,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                     bullets.clear();
                     healShips.clear();
                 } else {
-                    gameState = 0;
+                    gameState = STATE_COLONY;
                     player.x = 450;
                     player.y = 500;
                     shopOpen = false;
@@ -569,21 +600,20 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             }
         }
 
-        if (shopOpen && gameState == 1) {
+        if (shopOpen && gameState == STATE_SPACE) {
             if (k == KeyEvent.VK_1 || k == KeyEvent.VK_NUMPAD1) { if (coinCount >= 10 && speedLevel < 5) { coinCount -= 10; speedLevel++; } }
             if (k == KeyEvent.VK_2 || k == KeyEvent.VK_NUMPAD2) { if (coinCount >= 15 && fireLevel < 3) { coinCount -= 15; fireLevel++; } }
             if (k == KeyEvent.VK_3 || k == KeyEvent.VK_NUMPAD3) { if (coinCount >= 5 && !shield) { coinCount -= 5; shield = true; shieldTimer = SHIELD_MAX_DURATION; } }
             return;
         }
 
-        if (gameState == 0 && k == KeyEvent.VK_F) {
+        if (gameState == STATE_COLONY && k == KeyEvent.VK_F) {
             for (CropPlot p : plots) {
                 if (p.isPlayerNear(player)) {
                     if (p.state == 0) {
                         activePlot = p;
                         seedShopOpen = true;
-                    }
-                    else if (p.state == 3) {
+                    } else if (p.state == 3) {
                         p.harvest();
                         biomass += 10;
                         score += 15;
@@ -593,12 +623,12 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
 
-        if (k == KeyEvent.VK_A || k == KeyEvent.VK_LEFT) player.left = true;
+        if (k == KeyEvent.VK_A || k == KeyEvent.VK_LEFT)  player.left  = true;
         if (k == KeyEvent.VK_D || k == KeyEvent.VK_RIGHT) player.right = true;
-        if (k == KeyEvent.VK_W || k == KeyEvent.VK_UP) player.up = true;
-        if (k == KeyEvent.VK_S || k == KeyEvent.VK_DOWN) player.down = true;
+        if (k == KeyEvent.VK_W || k == KeyEvent.VK_UP)    player.up    = true;
+        if (k == KeyEvent.VK_S || k == KeyEvent.VK_DOWN)  player.down  = true;
 
-        if (gameState == 1 && k == KeyEvent.VK_SPACE) {
+        if (gameState == STATE_SPACE && k == KeyEvent.VK_SPACE) {
             int shots = 1 + fireLevel;
             for (int i = 0; i < shots; i++) {
                 bullets.add(new Bullet(player.x + 20 + ((i * 14) - ((shots - 1) * 7)), player.y));
@@ -609,10 +639,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     @Override
     public void keyReleased(KeyEvent e) {
         int k = e.getKeyCode();
-        if (k == KeyEvent.VK_A || k == KeyEvent.VK_LEFT) player.left = false;
+        if (k == KeyEvent.VK_A || k == KeyEvent.VK_LEFT)  player.left  = false;
         if (k == KeyEvent.VK_D || k == KeyEvent.VK_RIGHT) player.right = false;
-        if (k == KeyEvent.VK_W || k == KeyEvent.VK_UP) player.up = false;
-        if (k == KeyEvent.VK_S || k == KeyEvent.VK_DOWN) player.down = false;
+        if (k == KeyEvent.VK_W || k == KeyEvent.VK_UP)    player.up    = false;
+        if (k == KeyEvent.VK_S || k == KeyEvent.VK_DOWN)  player.down  = false;
     }
 
     @Override

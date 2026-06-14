@@ -9,7 +9,10 @@ public class Coin {
         this.y = y;
     }
 
-    public void update() {}
+    // FIX: movimento movido para aqui (estava no GamePanel, inconsistente com os outros objetos)
+    public void update() {
+        y += 2;
+    }
 
     public void draw(Graphics2D g) {
         // Brilho exterior (Néon)

@@ -3,14 +3,16 @@ import java.util.Random;
 
 public class Particle {
     public double x, y;
-    public double dx, dy; // Variáveis de direção que faltavam
+    public double dx, dy;
     public int life;
     private Color color;
+
+    // FIX: Random estático — evita criar um objeto novo por cada partícula
+    private static final Random rand = new Random();
 
     public Particle(int x, int y) {
         this.x = x;
         this.y = y;
-        Random rand = new Random();
         this.dx = (rand.nextDouble() - 0.5) * 4;
         this.dy = (rand.nextDouble() - 0.5) * 4;
         this.life = rand.nextInt(20) + 10;
@@ -25,6 +27,6 @@ public class Particle {
 
     public void draw(Graphics2D g) {
         g.setColor(color);
-        g.fillRect((int)x, (int)y, 3, 3);
+        g.fillRect((int) x, (int) y, 3, 3);
     }
 }

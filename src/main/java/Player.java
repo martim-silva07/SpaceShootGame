@@ -19,13 +19,21 @@ public class Player {
 
     public void update(int speedLevel) {
         int speed = 5 + speedLevel;
-        if (left) x -= speed;
-        if (right) x += speed;
-        if (up) y -= speed;
-        if (down) y += speed;
+        int dx = 0, dy = 0;
 
-        x = Math.max(0, Math.min(850, x));
-        y = Math.max(10, Math.min(530, y));
+        if (left)  dx -= speed;
+        if (right) dx += speed;
+        if (up)    dy -= speed;
+        if (down)  dy += speed;
+
+        // FIX: normaliza a velocidade diagonal para não ser ~41% mais rápida
+        if (dx != 0 && dy != 0) {
+            dx = (int)(dx * 0.707);
+            dy = (int)(dy * 0.707);
+        }
+
+        x = Math.max(0, Math.min(850, x + dx));
+        y = Math.max(10, Math.min(530, y + dy));
     }
 
     public void draw(Graphics2D g, boolean shield) {
