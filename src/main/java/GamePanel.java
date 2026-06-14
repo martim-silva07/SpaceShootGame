@@ -101,7 +101,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
             if (shopOpen) return;
 
-            if (clearListsRequested) { enemies.clear(); healShips.clear(); clearListsRequested = false; }
+            if (clearListsRequested) {
+                enemies.clear();
+                healShips.clear();
+                clearListsRequested = false;
+            }
 
             player.update(speedLevel);
 
@@ -125,15 +129,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 if (rand.nextInt(4) == 0) {
                     lightnings.add(new WhiteLightning(450, 300));
                 }
-                if (enemies.isEmpty()) {
-                    enemiesKilled = 0;
-                    waitingForSystemChange = false;
-                    if (currentPlanetIndex < PLANETS.length - 1) {
-                        currentPlanetIndex++;
-                    }
-                }
             }
+
             spawnEnemies();
+            spawnHealShip();
             handleCollisions();
         }
     }
@@ -143,6 +142,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         int sampleRate = Math.max(12, 40 - (score / 150) - (currentPlanetIndex * 4));
         if (rand.nextInt(sampleRate) == 0) {
             enemies.add(new Enemy(rand.nextInt(740) + 70, -30, rand.nextInt(3), currentPlanetIndex));
+        }
+    }
+
+    private void spawnHealShip() {
+        if (waitingForSystemChange || !healShips.isEmpty()) return;
+        if (rand.nextInt(1200) == 0) {
+            healShips.add(new HealShip(-40, rand.nextInt(150) + 70));
         }
     }
 
@@ -169,6 +175,24 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 if (shield) shield = false; else { hp--; if (hp <= 0) { resetGame(); return; } }
             }
         }
+
+        for (HealShip hs : healShips) {
+            for (Bullet b : bullets) {
+                if (b.active && hs.alive && b.x > hs.x && b.x < hs.x + 45 && b.y > hs.y && b.y < hs.y + 30) {
+                    b.active = false;
+                    hs.alive = false;
+                    hearts.add(new HeartItem(hs.x + 15, hs.y + 10));
+                }
+            }
+        }
+
+        for (HeartItem h : hearts) {
+            if (!h.collected && player.x + 40 > h.x && player.x < h.x + 20 && player.y + 40 > h.y && player.y < h.y + 20) {
+                h.collected = true;
+                if (hp < maxHp) hp++;
+            }
+        }
+
         for (Coin c : coins) { if (!c.collected && c.hit(player)) { c.collected = true; coinCount++; } }
     }
 
@@ -235,6 +259,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
             for (WhiteLightning wl : lightnings) wl.draw(g2);
             for (Coin c : coins) c.draw(g2);
+            for (HealShip hs : healShips) hs.draw(g2);
+            for (HeartItem h : hearts) h.draw(g2);
 
             for (Bullet b : bullets) {
                 g2.setColor(new Color(255, 60, 0, 150));
@@ -255,29 +281,38 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private void drawSpaceAnomaly(Graphics2D g2) {
         int cx = 450, cy = 300;
         int baseSize = 40 + (currentPlanetIndex * 12);
+
         for (int r = baseSize + 60; r > baseSize; r -= 4) {
             int alpha = (int) (110 * Math.exp(-(r - baseSize) * 0.04));
-            g2.setColor(new Color(130, 50, 250, alpha));
+            if (waitingForSystemChange) {
+                g2.setColor(new Color(240, 245, 255, alpha));
+            } else {
+                g2.setColor(new Color(130, 50, 250, alpha));
+            }
             g2.fillOval(cx - r / 2, cy - r / 2, r, r);
         }
-        g2.setColor(new Color(5, 5, 10));
+
+        if (waitingForSystemChange) {
+            g2.setColor(Color.WHITE);
+        } else {
+            g2.setColor(new Color(5, 5, 10));
+        }
         g2.fillOval(cx - baseSize / 2, cy - baseSize / 2, baseSize, baseSize);
 
-        // ALTERAÇÃO: Mostrar aviso de teletransporte se o jogador estiver perto do centro do buraco negro
         int px = player.x + 20;
         int py = player.y + 20;
         double dist = Math.sqrt(Math.pow(px - cx, 2) + Math.pow(py - cy, 2));
         if (dist <= (baseSize / 2 + 40)) {
             g2.setFont(new Font("Courier New", Font.BOLD, 14));
             g2.setColor(new Color(0, 255, 150));
-            String qMsg = "[ PRESS 'Q' TO TELEPORT TO BASE ]";
+            String qMsg = waitingForSystemChange ? "[ PRESS 'Q' TO JUMP TO NEXT SYSTEM ]" : "[ PRESS 'Q' TO RETURN TO CORE BASE ]";
             g2.drawString(qMsg, (900 - g2.getFontMetrics().stringWidth(qMsg)) / 2, 385);
         }
 
         if (waitingForSystemChange) {
             g2.setFont(new Font("Segoe UI", Font.BOLD, 22));
             g2.setColor(Color.ORANGE);
-            String msg = "HYPERDRIVE ENGAGED: CLEAR REMAINING HOSTILES!";
+            String msg = "SYSTEM CLEARED: WARP DRIVE READY!";
             g2.drawString(msg, (900 - g2.getFontMetrics().stringWidth(msg)) / 2, 95);
         }
     }
@@ -293,7 +328,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2.setColor(Color.WHITE); g2.drawString("SCORE: " + score, 160, 32);
         g2.setColor(Color.YELLOW); g2.drawString("COINS: " + coinCount, 290, 32);
 
-        // ALTERAÇÃO: Nome do planeta centralizado + Barra de Progresso Planetária por baixo
         g2.setColor(Color.CYAN);
         String pName = PLANETS[currentPlanetIndex];
         int pNameW = g2.getFontMetrics().stringWidth(pName);
@@ -303,22 +337,20 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         int pBarX = 450 - (pBarW / 2);
         int pBarY = 32;
         g2.setColor(new Color(40, 40, 50));
-        g2.fillRect(pBarX, pBarY, pBarW, 6); // Fundo da barra
+        g2.fillRect(pBarX, pBarY, pBarW, 6);
 
         int pFillW = (int) (pBarW * Math.min(1.0, (double) enemiesKilled / KILLS_PER_LEVEL));
         g2.setColor(Color.CYAN);
-        g2.fillRect(pBarX, pBarY, pFillW, 6); // Preenchimento de progresso
+        g2.fillRect(pBarX, pBarY, pFillW, 6);
         g2.setColor(new Color(0, 255, 255, 100));
-        g2.drawRect(pBarX, pBarY, pBarW, 6);  // Contorno high-tech
+        g2.drawRect(pBarX, pBarY, pBarW, 6);
 
         if (shield) {
             g2.setFont(new Font("Segoe UI", Font.BOLD, 11));
             g2.setColor(new Color(255, 50, 100));
             g2.drawString("SHIELD", 580, 25);
-
             g2.setColor(Color.DARK_GRAY);
             g2.fillRect(580, 30, 65, 8);
-
             int barWidth = (int) (65.0 * shieldTimer / SHIELD_MAX_DURATION);
             g2.setColor(new Color(255, 50, 100));
             g2.fillRect(580, 30, barWidth, 8);
@@ -335,9 +367,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2.fillRect(100, 80, 700, 440);
 
         g2.setColor(new Color(255, 255, 255, 6));
-        for (int y = 85; y < 515; y += 3) {
-            g2.drawLine(105, y, 795, y);
-        }
+        for (int y = 85; y < 515; y += 3) { g2.drawLine(105, y, 795, y); }
 
         g2.setStroke(new BasicStroke(3));
         g2.setColor(new Color(0, 220, 255, 200));
@@ -356,21 +386,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         String coinsMsg = "CREDITS SYNCED: " + coinCount + " CAS";
         g2.drawString(coinsMsg, (900 - g2.getFontMetrics().stringWidth(coinsMsg)) / 2, 175);
 
-        g2.setColor(new Color(0, 220, 255, 80));
-        g2.drawLine(140, 195, 760, 195);
+        g2.setColor(new Color(0, 220, 255, 80)); g2.drawLine(140, 195, 760, 195);
 
-        int startY = 230;
-        int spacing = 75;
-
+        int startY = 230; int spacing = 75;
         drawShopItem(g2, startY, "1", "HYPER ENGINE UPGRADE", speedLevel, 5, "10 COINS", new Color(0, 255, 150), true);
         drawShopItem(g2, startY + spacing, "2", "PLASMA DISRUPTOR GUN", fireLevel, 3, "15 COINS", new Color(255, 100, 0), true);
-
         String shieldStatus = shield ? "[ACTIVE]" : "READY TO DEPLOY";
         drawShopItem(g2, startY + (spacing * 2), "3", "ENERGY DEFLECTOR SHIELD (" + shieldStatus + ")", 0, 0, "5 COINS", new Color(255, 50, 100), false);
 
-        g2.setColor(new Color(0, 220, 255, 80));
-        g2.drawLine(140, 460, 760, 460);
-
+        g2.setColor(new Color(0, 220, 255, 80)); g2.drawLine(140, 460, 760, 460);
         g2.setFont(new Font("Courier New", Font.ITALIC | Font.BOLD, 15));
         g2.setColor(new Color(255, 60, 60));
         String exitMsg = "[ PRESS 'E' TO BREAK LINK AND RETURN TO COMBAT ]";
@@ -378,48 +402,26 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void drawShopItem(Graphics2D g2, int y, String key, String name, int currentLvl, int maxLvl, String cost, Color themeColor, boolean drawBars) {
-        g2.setColor(new Color(255, 255, 255, 12));
-        g2.fillRoundRect(140, y, 620, 58, 8, 8);
-        g2.setColor(new Color(0, 220, 255, 40));
-        g2.drawRoundRect(140, y, 620, 58, 8, 8);
-
-        g2.setColor(themeColor);
-        g2.setStroke(new BasicStroke(2));
-        g2.drawRect(155, y + 14, 30, 30);
-        g2.setStroke(new BasicStroke(1));
-        g2.setFont(new Font("Courier New", Font.BOLD, 18));
-        g2.drawString(key, 165, y + 35);
-
-        g2.setFont(new Font("Lucida Console", Font.BOLD, 14));
-        g2.setColor(Color.WHITE);
-        g2.drawString(name, 205, y + 26);
+        g2.setColor(new Color(255, 255, 255, 12)); g2.fillRoundRect(140, y, 620, 58, 8, 8);
+        g2.setColor(new Color(0, 220, 255, 40)); g2.drawRoundRect(140, y, 620, 58, 8, 8);
+        g2.setColor(themeColor); g2.setStroke(new BasicStroke(2)); g2.drawRect(155, y + 14, 30, 30);
+        g2.setStroke(new BasicStroke(1)); g2.setFont(new Font("Courier New", Font.BOLD, 18)); g2.drawString(key, 165, y + 35);
+        g2.setFont(new Font("Lucida Console", Font.BOLD, 14)); g2.setColor(Color.WHITE); g2.drawString(name, 205, y + 26);
 
         if (drawBars) {
             for (int i = 0; i < maxLvl; i++) {
-                if (i < currentLvl) {
-                    g2.setColor(themeColor);
-                    g2.fillRect(205 + (i * 24), y + 36, 18, 10);
-                } else {
-                    g2.setColor(new Color(60, 60, 70));
-                    g2.fillRect(205 + (i * 24), y + 36, 18, 10);
-                    g2.setColor(new Color(100, 100, 110, 100));
-                    g2.drawRect(205 + (i * 24), y + 36, 18, 10);
+                if (i < currentLvl) { g2.setColor(themeColor); g2.fillRect(205 + (i * 24), y + 36, 18, 10); }
+                else {
+                    g2.setColor(new Color(60, 60, 70)); g2.fillRect(205 + (i * 24), y + 36, 18, 10);
+                    g2.setColor(new Color(100, 100, 110, 100)); g2.drawRect(205 + (i * 24), y + 36, 18, 10);
                 }
             }
         } else {
-            g2.setFont(new Font("Lucida Console", Font.PLAIN, 12));
-            g2.setColor(Color.LIGHT_GRAY);
-            g2.drawString("Provides full immunity to next enemy impacts", 205, y + 44);
+            g2.setFont(new Font("Lucida Console", Font.PLAIN, 12)); g2.setColor(Color.LIGHT_GRAY); g2.drawString("Provides full immunity to next enemy impacts", 205, y + 44);
         }
-
         g2.setFont(new Font("Courier New", Font.BOLD, 15));
-        if (drawBars && currentLvl >= maxLvl) {
-            g2.setColor(Color.DARK_GRAY);
-            g2.drawString("[MAXED]", 640, y + 35);
-        } else {
-            g2.setColor(Color.YELLOW);
-            g2.drawString("COST: " + cost, 595, y + 35);
-        }
+        if (drawBars && currentLvl >= maxLvl) { g2.setColor(Color.DARK_GRAY); g2.drawString("[MAXED]", 640, y + 35); }
+        else { g2.setColor(Color.YELLOW); g2.drawString("COST: " + cost, 595, y + 35); }
     }
 
     @Override
@@ -435,47 +437,41 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
 
         if (k == KeyEvent.VK_E) {
-            if (gameState == 1) {
-                shopOpen = !shopOpen;
-            }
+            if (gameState == 1) shopOpen = !shopOpen;
             return;
         }
 
-        // ALTERAÇÃO: Verificar se 'Q' foi premido dentro do buraco negro para regressar à base colónia
         if (gameState == 1 && k == KeyEvent.VK_Q) {
             int px = player.x + 20;
             int py = player.y + 20;
             double dist = Math.sqrt(Math.pow(px - 450, 2) + Math.pow(py - 300, 2));
             int baseSize = 40 + (currentPlanetIndex * 12);
             if (dist <= (baseSize / 2 + 40)) {
-                gameState = 0; // Vai para a colónia de plantação
-                player.x = 450;
-                player.y = 500;
-                shopOpen = false;
+                if (waitingForSystemChange) {
+                    enemiesKilled = 0;
+                    waitingForSystemChange = false;
+                    if (currentPlanetIndex < PLANETS.length - 1) {
+                        currentPlanetIndex++;
+                    }
+                    player.x = 450;
+                    player.y = 500;
+                    enemies.clear();
+                    bullets.clear();
+                    healShips.clear();
+                } else {
+                    gameState = 0;
+                    player.x = 450;
+                    player.y = 500;
+                    shopOpen = false;
+                }
                 return;
             }
         }
 
         if (shopOpen && gameState == 1) {
-            if (k == KeyEvent.VK_1 || k == KeyEvent.VK_NUMPAD1) {
-                if (coinCount >= 10 && speedLevel < 5) {
-                    coinCount -= 10;
-                    speedLevel++;
-                }
-            }
-            if (k == KeyEvent.VK_2 || k == KeyEvent.VK_NUMPAD2) {
-                if (coinCount >= 15 && fireLevel < 3) {
-                    coinCount -= 15;
-                    fireLevel++;
-                }
-            }
-            if (k == KeyEvent.VK_3 || k == KeyEvent.VK_NUMPAD3) {
-                if (coinCount >= 5 && !shield) {
-                    coinCount -= 5;
-                    shield = true;
-                    shieldTimer = SHIELD_MAX_DURATION;
-                }
-            }
+            if (k == KeyEvent.VK_1 || k == KeyEvent.VK_NUMPAD1) { if (coinCount >= 10 && speedLevel < 5) { coinCount -= 10; speedLevel++; } }
+            if (k == KeyEvent.VK_2 || k == KeyEvent.VK_NUMPAD2) { if (coinCount >= 15 && fireLevel < 3) { coinCount -= 15; fireLevel++; } }
+            if (k == KeyEvent.VK_3 || k == KeyEvent.VK_NUMPAD3) { if (coinCount >= 5 && !shield) { coinCount -= 5; shield = true; shieldTimer = SHIELD_MAX_DURATION; } }
             return;
         }
 
