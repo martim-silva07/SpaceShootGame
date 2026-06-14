@@ -26,7 +26,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private int speedLevel = 0, fireLevel = 0;
     private boolean shield = false;
     private int shieldTimer = 0;
-    private final int SHIELD_MAX_DURATION = 400; // Duração máxima original para cálculo da barra
+    private final int SHIELD_MAX_DURATION = 400;
     private boolean shopOpen = false;
     private int enemiesKilled = 0;
     private int currentPlanetIndex = 0;
@@ -263,6 +263,17 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2.setColor(new Color(5, 5, 10));
         g2.fillOval(cx - baseSize / 2, cy - baseSize / 2, baseSize, baseSize);
 
+        // ALTERAÇÃO: Mostrar aviso de teletransporte se o jogador estiver perto do centro do buraco negro
+        int px = player.x + 20;
+        int py = player.y + 20;
+        double dist = Math.sqrt(Math.pow(px - cx, 2) + Math.pow(py - cy, 2));
+        if (dist <= (baseSize / 2 + 40)) {
+            g2.setFont(new Font("Courier New", Font.BOLD, 14));
+            g2.setColor(new Color(0, 255, 150));
+            String qMsg = "[ PRESS 'Q' TO TELEPORT TO BASE ]";
+            g2.drawString(qMsg, (900 - g2.getFontMetrics().stringWidth(qMsg)) / 2, 385);
+        }
+
         if (waitingForSystemChange) {
             g2.setFont(new Font("Segoe UI", Font.BOLD, 22));
             g2.setColor(Color.ORANGE);
@@ -281,19 +292,33 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         g2.setColor(Color.WHITE); g2.drawString("SCORE: " + score, 160, 32);
         g2.setColor(Color.YELLOW); g2.drawString("COINS: " + coinCount, 290, 32);
-        g2.setColor(Color.CYAN); g2.drawString(PLANETS[currentPlanetIndex], 450, 32);
 
-        // ELEMENTO NOVO: Barra de Progresso Temporal do Escudo no HUD Superior esquerdo
+        // ALTERAÇÃO: Nome do planeta centralizado + Barra de Progresso Planetária por baixo
+        g2.setColor(Color.CYAN);
+        String pName = PLANETS[currentPlanetIndex];
+        int pNameW = g2.getFontMetrics().stringWidth(pName);
+        g2.drawString(pName, 450 - (pNameW / 2), 24);
+
+        int pBarW = 120;
+        int pBarX = 450 - (pBarW / 2);
+        int pBarY = 32;
+        g2.setColor(new Color(40, 40, 50));
+        g2.fillRect(pBarX, pBarY, pBarW, 6); // Fundo da barra
+
+        int pFillW = (int) (pBarW * Math.min(1.0, (double) enemiesKilled / KILLS_PER_LEVEL));
+        g2.setColor(Color.CYAN);
+        g2.fillRect(pBarX, pBarY, pFillW, 6); // Preenchimento de progresso
+        g2.setColor(new Color(0, 255, 255, 100));
+        g2.drawRect(pBarX, pBarY, pBarW, 6);  // Contorno high-tech
+
         if (shield) {
             g2.setFont(new Font("Segoe UI", Font.BOLD, 11));
             g2.setColor(new Color(255, 50, 100));
             g2.drawString("SHIELD", 580, 25);
 
-            // Fundo escuro da barra
             g2.setColor(Color.DARK_GRAY);
             g2.fillRect(580, 30, 65, 8);
 
-            // Preenchimento proporcional ao tempo restante do temporizador
             int barWidth = (int) (65.0 * shieldTimer / SHIELD_MAX_DURATION);
             g2.setColor(new Color(255, 50, 100));
             g2.fillRect(580, 30, barWidth, 8);
@@ -416,6 +441,21 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
 
+        // ALTERAÇÃO: Verificar se 'Q' foi premido dentro do buraco negro para regressar à base colónia
+        if (gameState == 1 && k == KeyEvent.VK_Q) {
+            int px = player.x + 20;
+            int py = player.y + 20;
+            double dist = Math.sqrt(Math.pow(px - 450, 2) + Math.pow(py - 300, 2));
+            int baseSize = 40 + (currentPlanetIndex * 12);
+            if (dist <= (baseSize / 2 + 40)) {
+                gameState = 0; // Vai para a colónia de plantação
+                player.x = 450;
+                player.y = 500;
+                shopOpen = false;
+                return;
+            }
+        }
+
         if (shopOpen && gameState == 1) {
             if (k == KeyEvent.VK_1 || k == KeyEvent.VK_NUMPAD1) {
                 if (coinCount >= 10 && speedLevel < 5) {
@@ -433,7 +473,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 if (coinCount >= 5 && !shield) {
                     coinCount -= 5;
                     shield = true;
-                    shieldTimer = SHIELD_MAX_DURATION; // Reinicia o escudo com o temporizador cheio
+                    shieldTimer = SHIELD_MAX_DURATION;
                 }
             }
             return;
