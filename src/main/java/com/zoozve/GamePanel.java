@@ -11,9 +11,13 @@ import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator.FreeTypeFontParameter;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer.ShapeType;
 import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.utils.viewport.FitViewport;
+import com.badlogic.gdx.utils.viewport.Viewport;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,11 +30,15 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
     private static final int STATE_SPACE    =  1;
     private static final int STATE_GAMEOVER =  2;
 
+    private static final int VIRTUAL_WIDTH  = 900;
+    private static final int VIRTUAL_HEIGHT = 600;
+
     private SpriteBatch batch;
     private ShapeRenderer sr;
     private BitmapFont fontSm, fontMd, fontLg, fontXl;
     private GlyphLayout layout;
     private OrthographicCamera camera;
+    private Viewport viewport;
 
     private static final Color[] PLANET_COLORS = {
             new Color(25/255f, 25/255f, 30/255f, 1), new Color(45/255f, 35/255f, 20/255f, 1),
@@ -91,12 +99,26 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
         layout = new GlyphLayout();
 
         camera = new OrthographicCamera();
-        camera.setToOrtho(true, 900, 600);
+        camera.setToOrtho(true, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+        viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
 
-        fontSm = new BitmapFont(true); fontSm.getData().setScale(0.85f);
-        fontMd = new BitmapFont(true); fontMd.getData().setScale(1.1f);
-        fontLg = new BitmapFont(true); fontLg.getData().setScale(1.8f);
-        fontXl = new BitmapFont(true); fontXl.getData().setScale(3.2f);
+        // Gerador para texto normal (segoeui.ttf)
+        FreeTypeFontGenerator genRegular = new FreeTypeFontGenerator(
+                Gdx.files.internal("fonts/segoeui.ttf"));
+        // Gerador para títulos e texto em destaque (segoeuib.ttf = bold)
+        FreeTypeFontGenerator genBold = new FreeTypeFontGenerator(
+                Gdx.files.internal("fonts/segoeuib.ttf"));
+
+        FreeTypeFontParameter fp = new FreeTypeFontParameter();
+        fp.flip = true; // necessário para camera y-down
+
+        fp.size = 12; fontSm = genRegular.generateFont(fp); // instruções pequenas
+        fp.size = 16; fontMd = genRegular.generateFont(fp); // UI normal
+        fp.size = 26; fontLg = genBold.generateFont(fp);    // títulos de secção (bold)
+        fp.size = 52; fontXl = genBold.generateFont(fp);    // GAME OVER, shop titles (bold)
+
+        genRegular.dispose();
+        genBold.dispose();
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
@@ -104,7 +126,7 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
         Gdx.input.setInputProcessor(this);
 
         for (int i = 0; i < 120; i++)
-            stars.add(new Star(rand.nextInt(900), rand.nextInt(600), rand.nextInt(3) + 1));
+            stars.add(new Star(rand.nextInt(VIRTUAL_WIDTH), rand.nextInt(VIRTUAL_HEIGHT), rand.nextInt(3) + 1));
 
         for (int row = 0; row < 2; row++)
             for (int col = 0; col < 4; col++)
@@ -247,25 +269,35 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
     @Override
     public void render() {
         update();
-        camera.update();
+        viewport.apply();
         sr.setProjectionMatrix(camera.combined);
         batch.setProjectionMatrix(camera.combined);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
 
-        switch (gameState) {
-            case STATE_INTRO    -> renderIntro();
-            case STATE_COLONY   -> renderColony();
-            case STATE_SPACE    -> renderSpace();
-            case STATE_GAMEOVER -> renderGameOver();
-        }
+        if      (gameState == STATE_INTRO)    renderIntro();
+        else if (gameState == STATE_COLONY)   renderColony();
+        else if (gameState == STATE_SPACE)    renderSpace();
+        else if (gameState == STATE_GAMEOVER) renderGameOver();
+    }
+
+    // Helper para desenhar sprite com flip vertical (corrige y-down da camera)
+    private void drawFlipped(SpriteBatch batch, Runnable drawCall, float cx, float cy) {
+        Matrix4 old = batch.getTransformMatrix().cpy();
+        Matrix4 flipped = old.cpy();
+        flipped.translate(cx, cy, 0);
+        flipped.scale(1, -1, 1);
+        flipped.translate(-cx, -cy, 0);
+        batch.setTransformMatrix(flipped);
+        drawCall.run();
+        batch.setTransformMatrix(old);
     }
 
     private void renderIntro() {
         sr.begin(ShapeType.Filled);
         sr.setColor(5/255f, 5/255f, 12/255f, 1f);
-        sr.rect(0, 0, 900, 600);
+        sr.rect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
         for (Star s : stars) s.draw(sr);
         sr.end();
 
@@ -273,9 +305,9 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
         int startY = 140;
         for (int i = 0; i < INTRO_TEXT[introPage].length; i++) {
             String line = INTRO_TEXT[introPage][i];
-            if (line.contains("ZOOZVE"))              fontMd.setColor(Color.YELLOW);
+            if (line.contains("ZOOZVE"))                                   fontMd.setColor(Color.YELLOW);
             else if (line.contains("TWIST") || line.contains("INVADERS")) fontMd.setColor(Color.RED);
-            else                                       fontMd.setColor(Color.LIGHT_GRAY);
+            else                                                            fontMd.setColor(Color.LIGHT_GRAY);
             fontMd.draw(batch, line, 70, startY + i * 35);
         }
         if (introPage < INTRO_TEXT.length - 1) {
@@ -288,7 +320,7 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
     private void renderColony() {
         sr.begin(ShapeType.Filled);
         sr.setColor(35/255f, 24/255f, 17/255f, 1f);
-        sr.rect(0, 0, 900, 600);
+        sr.rect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
         sr.setColor(50/255f, 36/255f, 26/255f, 1f);
         for (int i = 0; i < 8; i++) sr.ellipse(i * 140, (i % 2) * 200 + 100, 120, 45);
         for (CropPlot p : plots) p.draw(sr);
@@ -303,16 +335,10 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
         sr.end();
 
         batch.begin();
-        Matrix4 oldMatrixColony = batch.getTransformMatrix().cpy();
-        Matrix4 flipMatrixPlayer = oldMatrixColony.cpy();
-        float pCx = player.x + player.width / 2f;
-        float pCy = player.y + player.height / 2f;
-        flipMatrixPlayer.translate(pCx, pCy, 0);
-        flipMatrixPlayer.scale(1, -1, 1);
-        flipMatrixPlayer.translate(-pCx, -pCy, 0);
-        batch.setTransformMatrix(flipMatrixPlayer);
-        player.draw(batch);
-        batch.setTransformMatrix(oldMatrixColony);
+        drawFlipped(batch,
+                () -> player.draw(batch),
+                player.x + player.width / 2f,
+                player.y + player.height / 2f);
 
         fontLg.setColor(Color.WHITE);
         fontLg.draw(batch, "ZOOZVE COLONY CORE", 25, 40);
@@ -330,9 +356,10 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
     }
 
     private void renderSpace() {
+        // PASS 1: formas
         sr.begin(ShapeType.Filled);
         sr.setColor(PLANET_COLORS[currentPlanetIndex]);
-        sr.rect(0, 0, 900, 600);
+        sr.rect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
         for (Star s : stars) s.draw(sr);
         drawSpaceAnomalyShapes();
         for (WhiteLightning wl : lightnings) wl.draw(sr);
@@ -350,49 +377,25 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
         }
         sr.end();
 
+        // PASS 2: sprites (com flip para corrigir camera y-down)
         batch.begin();
-        Matrix4 oldMatrixSpace = batch.getTransformMatrix().cpy();
-
-        for (HealShip hs : healShips) {
-            Matrix4 flipMatrix = oldMatrixSpace.cpy();
-            float cx = hs.x + hs.width / 2f;
-            float cy = hs.y + hs.height / 2f;
-            flipMatrix.translate(cx, cy, 0);
-            flipMatrix.scale(1, -1, 1);
-            flipMatrix.translate(-cx, -cy, 0);
-            batch.setTransformMatrix(flipMatrix);
-            hs.draw(batch);
-        }
-
-        for (Enemy en : enemies) {
-            Matrix4 flipMatrix = oldMatrixSpace.cpy();
-            float cx = en.x + en.size / 2f;
-            float cy = en.y + en.size / 2f;
-            flipMatrix.translate(cx, cy, 0);
-            flipMatrix.scale(1, -1, 1);
-            flipMatrix.translate(-cx, -cy, 0);
-            batch.setTransformMatrix(flipMatrix);
-            en.draw(batch);
-        }
-
-        Matrix4 flipMatrixPlayerSpace = oldMatrixSpace.cpy();
-        float pCxSpace = player.x + player.width / 2f;
-        float pCySpace = player.y + player.height / 2f;
-        flipMatrixPlayerSpace.translate(pCxSpace, pCySpace, 0);
-        flipMatrixPlayerSpace.scale(1, -1, 1);
-        flipMatrixPlayerSpace.translate(-pCxSpace, -pCySpace, 0);
-        batch.setTransformMatrix(flipMatrixPlayerSpace);
-        player.draw(batch);
-
-        batch.setTransformMatrix(oldMatrixSpace);
+        for (HealShip hs : healShips)
+            drawFlipped(batch, () -> hs.draw(batch), hs.x + hs.width / 2f, hs.y + hs.height / 2f);
+        for (Enemy en : enemies)
+            drawFlipped(batch, () -> en.draw(batch), en.x + en.size / 2f, en.y + en.size / 2f);
+        drawFlipped(batch,
+                () -> player.draw(batch),
+                player.x + player.width / 2f,
+                player.y + player.height / 2f);
         batch.end();
 
+        // PASS 3: UI shapes
         sr.begin(ShapeType.Filled);
         for (HealShip hs : healShips) {
             sr.setColor(Color.RED);   sr.rect(hs.x, hs.y - 10, hs.width, 5);
             sr.setColor(Color.GREEN); sr.rect(hs.x, hs.y - 10, (int)(hs.width * ((float)healShipHp / HEAL_SHIP_MAX_HP)), 5);
         }
-        sr.setColor(0, 0, 0, 220/255f); sr.rect(0, 0, 900, 55);
+        sr.setColor(0, 0, 0, 220/255f); sr.rect(0, 0, VIRTUAL_WIDTH, 55);
         for (int i = 0; i < maxHp; i++) {
             sr.setColor(i < hp ? Color.RED : Color.DARK_GRAY);
             sr.rect(55 + i * 22, 20, 14, 14);
@@ -408,6 +411,7 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
         }
         sr.end();
 
+        // PASS 4: UI texto
         batch.begin();
         fontMd.setColor(Color.RED);    fontMd.draw(batch, "HP:", 20, 32);
         fontMd.setColor(Color.WHITE);  fontMd.draw(batch, "SCORE: " + score, 160, 32);
@@ -428,7 +432,8 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
 
     private void renderGameOver() {
         sr.begin(ShapeType.Filled);
-        sr.setColor(5/255f, 5/255f, 12/255f, 1f); sr.rect(0, 0, 900, 600);
+        sr.setColor(5/255f, 5/255f, 12/255f, 1f);
+        sr.rect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
         for (Star s : stars) s.draw(sr);
         sr.end();
 
@@ -436,11 +441,11 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
         fontXl.setColor(Color.RED);
         String msg = "GAME OVER";
         layout.setText(fontXl, msg);
-        fontXl.draw(batch, msg, (900 - layout.width) / 2f, 245);
+        fontXl.draw(batch, msg, (VIRTUAL_WIDTH - layout.width) / 2f, 245);
         fontLg.setColor(Color.LIGHT_GRAY);
         String sub = "[ PRESS R TO RESTART ]";
         layout.setText(fontLg, sub);
-        fontLg.draw(batch, sub, (900 - layout.width) / 2f, 330);
+        fontLg.draw(batch, sub, (VIRTUAL_WIDTH - layout.width) / 2f, 330);
         batch.end();
     }
 
@@ -469,39 +474,57 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
             else
                 msg = "[ Q - RETURN TO COLONY ]";
             layout.setText(fontMd, msg);
-            fontMd.draw(batch, msg, (900 - layout.width) / 2f, 385);
+            fontMd.draw(batch, msg, (VIRTUAL_WIDTH - layout.width) / 2f, 385);
         }
         if (waitingForSystemChange) {
             fontLg.setColor(Color.ORANGE);
             String msg = (currentPlanetIndex == 7) ? "SOLAR SYSTEM CLEARED!" : "PLANET CLEARED!";
             layout.setText(fontLg, msg);
-            fontLg.draw(batch, msg, (900 - layout.width) / 2f, 95);
+            fontLg.draw(batch, msg, (VIRTUAL_WIDTH - layout.width) / 2f, 95);
         }
     }
 
+    // =========================================================
+    // SEED SHOP
+    // =========================================================
     private void renderSeedShop() {
         sr.begin(ShapeType.Filled);
-        sr.setColor(10/255f, 28/255f, 18/255f, 240/255f); sr.rect(100, 80, 700, 440);
-        sr.setColor(0, 1f, 130/255f, 60/255f);
-        sr.rect(140, 195, 620, 1); sr.rect(140, 460, 620, 1);
+        sr.setColor(6/255f, 20/255f, 14/255f, 245/255f);
+        sr.rect(100, 80, 700, 440);
+        sr.setColor(0f, 1f, 0.4f, 12/255f);
+        for (int y = 90; y < 510; y += 6) sr.rect(105, y, 690, 2);
+        for (int y : new int[]{230, 305, 380}) {
+            sr.setColor(12/255f, 35/255f, 24/255f, 200/255f);
+            sr.rect(140, y, 620, 58);
+        }
         sr.end();
+
         sr.begin(ShapeType.Line);
-        sr.setColor(0, 1f, 130/255f, 200/255f); sr.rect(100, 80, 700, 440);
+        Gdx.gl.glLineWidth(3);
+        sr.setColor(0f, 1f, 0.5f, 0.8f); sr.rect(100, 80, 700, 440);
+        Gdx.gl.glLineWidth(1);
+        sr.setColor(0f, 1f, 0.5f, 0.4f); sr.rect(95, 75, 710, 450);
         sr.end();
 
         batch.begin();
-        fontXl.setColor(0, 1f, 140/255f, 1f);
-        String title = "== BIO-SEED LAB ==";
-        layout.setText(fontXl, title); fontXl.draw(batch, title, (900 - layout.width) / 2f, 135);
+        fontXl.setColor(0f, 1f, 0.6f, 1f);
+        String title = "  BIO-SEED LAB  ";
+        layout.setText(fontXl, title);
+        fontXl.draw(batch, title, (VIRTUAL_WIDTH - layout.width) / 2f, 135);
+
         fontMd.setColor(Color.YELLOW);
         String funds = "AVAILABLE FUNDS: " + coinCount + " CASH";
-        layout.setText(fontMd, funds); fontMd.draw(batch, funds, (900 - layout.width) / 2f, 175);
-        drawSeedRow(230, "1", "TERRA CARROT SEEDS",      "Standard earth crop. Yields basic biomass.", "2 COINS", true);
-        drawSeedRow(305, "2", "COSMIC BIO-REAGENT",      "[ LOCKED - FUTURE UPGRADE ]",                "5 COINS", false);
-        drawSeedRow(380, "3", "QUANTUM SUNFLOWER SEEDS", "[ LOCKED - FUTURE UPGRADE ]",                "10 COINS",false);
-        fontMd.setColor(Color.LIGHT_GRAY);
+        layout.setText(fontMd, funds);
+        fontMd.draw(batch, funds, (VIRTUAL_WIDTH - layout.width) / 2f, 175);
+
+        drawSeedRow(230, "1", "TERRA CARROT SEEDS",      "Standard earth crop. Yields basic biomass.", "2 COINS",  true);
+        drawSeedRow(305, "2", "COSMIC BIO-REAGENT",      "[ LOCKED - REACH NEPTUNE ]",                 "5 COINS",  false);
+        drawSeedRow(380, "3", "QUANTUM SUNFLOWER SEEDS", "[ LOCKED - REACH CENTAURI ]",                "10 COINS", false);
+
+        fontSm.setColor(Color.LIGHT_GRAY);
         String exit = "[ PRESS F OR E TO EXIT ]";
-        layout.setText(fontMd, exit); fontMd.draw(batch, exit, (900 - layout.width) / 2f, 495);
+        layout.setText(fontSm, exit);
+        fontSm.draw(batch, exit, (VIRTUAL_WIDTH - layout.width) / 2f, 495);
         batch.end();
     }
 
@@ -513,55 +536,64 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
         fontMd.draw(batch, "COST: " + cost, 595, y + 35);
     }
 
+    // =========================================================
+    // SHOP
+    // =========================================================
     private void renderShop() {
         sr.begin(ShapeType.Filled);
-        sr.setColor(10/255f, 15/255f, 30/255f, 240/255f); sr.rect(100, 80, 700, 440);
-        sr.setColor(1f, 1f, 1f, 6/255f);
-        for (int y = 85; y < 515; y += 3) sr.rect(105, y, 690, 1);
-        for (int y : new int[]{230, 305, 380}) { sr.setColor(1f, 1f, 1f, 12/255f); sr.rect(140, y, 620, 58); }
+        sr.setColor(10/255f, 12/255f, 22/255f, 245/255f);
+        sr.rect(100, 80, 700, 440);
+        sr.setColor(0f, 0.6f, 1f, 10/255f);
+        for (int y = 90; y < 510; y += 6) sr.rect(105, y, 690, 2);
+        for (int y : new int[]{230, 305, 380}) {
+            sr.setColor(18/255f, 22/255f, 38/255f, 220/255f);
+            sr.rect(140, y, 620, 58);
+        }
         for (int i = 0; i < 5; i++) {
-            sr.setColor(i < speedLevel ? new Color(0, 1f, 150/255f, 1f) : new Color(60/255f, 60/255f, 70/255f, 1f));
-            sr.rect(205 + i * 24, 266, 18, 10);
+            sr.setColor(i < speedLevel ? new Color(0f, 0.8f, 1f, 1f) : new Color(40/255f, 45/255f, 60/255f, 1f));
+            sr.rect(205 + i * 28, 268, 20, 8);
         }
         for (int i = 0; i < 3; i++) {
-            sr.setColor(i < fireLevel ? new Color(1f, 100/255f, 0, 1f) : new Color(60/255f, 60/255f, 70/255f, 1f));
-            sr.rect(205 + i * 24, 341, 18, 10);
+            sr.setColor(i < fireLevel ? new Color(1f, 0.4f, 0f, 1f) : new Color(40/255f, 45/255f, 60/255f, 1f));
+            sr.rect(205 + i * 28, 343, 20, 8);
         }
-        sr.setColor(0, 220/255f, 1f, 80/255f);
-        sr.rect(140, 195, 620, 1); sr.rect(140, 460, 620, 1);
         sr.end();
 
         sr.begin(ShapeType.Line);
-        sr.setColor(0, 220/255f, 1f, 200/255f); sr.rect(100, 80, 700, 440);
-        sr.setColor(0, 1f, 150/255f, 1f);    sr.rect(155, 244, 30, 30);
-        sr.setColor(1f, 100/255f, 0, 1f);    sr.rect(155, 319, 30, 30);
-        sr.setColor(1f, 50/255f, 100/255f, 1f); sr.rect(155, 394, 30, 30);
+        Gdx.gl.glLineWidth(3);
+        sr.setColor(0f, 0.7f, 1f, 0.8f); sr.rect(100, 80, 700, 440);
+        Gdx.gl.glLineWidth(1);
+        sr.setColor(0f, 0.5f, 1f, 0.3f); sr.rect(95, 75, 710, 450);
         sr.end();
 
         batch.begin();
-        fontXl.setColor(0, 1f, 200/255f, 1f);
-        String title = "== METROPOLIS MARKET ==";
-        layout.setText(fontXl, title); fontXl.draw(batch, title, (900 - layout.width) / 2f, 135);
+        fontXl.setColor(0f, 0.8f, 1f, 1f);
+        String title = "  METROPOLIS MARKET  ";
+        layout.setText(fontXl, title);
+        fontXl.draw(batch, title, (VIRTUAL_WIDTH - layout.width) / 2f, 135);
+
         fontMd.setColor(Color.YELLOW);
         String credits = "CREDITS SYNCED: " + coinCount + " CASH";
-        layout.setText(fontMd, credits); fontMd.draw(batch, credits, (900 - layout.width) / 2f, 175);
+        layout.setText(fontMd, credits);
+        fontMd.draw(batch, credits, (VIRTUAL_WIDTH - layout.width) / 2f, 175);
 
-        fontMd.setColor(Color.WHITE); fontMd.draw(batch, "1  HYPER ENGINE UPGRADE", 205, 256);
-        if (speedLevel >= 5) { fontMd.setColor(Color.DARK_GRAY); fontMd.draw(batch, "[MAXED]", 640, 265); }
-        else { fontMd.setColor(Color.YELLOW); fontMd.draw(batch, "COST: 10 COINS", 595, 265); }
+        fontMd.setColor(Color.WHITE); fontMd.draw(batch, "1  HYPER ENGINE UPGRADE", 205, 254);
+        if (speedLevel >= 5) { fontMd.setColor(Color.GREEN);  fontMd.draw(batch, "[MAXED]", 640, 265); }
+        else                 { fontMd.setColor(Color.YELLOW); fontMd.draw(batch, "COST: 10 COINS", 595, 265); }
 
-        fontMd.setColor(Color.WHITE); fontMd.draw(batch, "2  PLASMA DISRUPTOR GUN", 205, 331);
-        if (fireLevel >= 3) { fontMd.setColor(Color.DARK_GRAY); fontMd.draw(batch, "[MAXED]", 640, 340); }
-        else { fontMd.setColor(Color.YELLOW); fontMd.draw(batch, "COST: 15 COINS", 595, 340); }
+        fontMd.setColor(Color.WHITE); fontMd.draw(batch, "2  PLASMA DISRUPTOR GUN", 205, 329);
+        if (fireLevel >= 3) { fontMd.setColor(Color.GREEN);  fontMd.draw(batch, "[MAXED]", 640, 340); }
+        else                { fontMd.setColor(Color.YELLOW); fontMd.draw(batch, "COST: 15 COINS", 595, 340); }
 
         String shieldStatus = shield ? "[ACTIVE]" : "READY TO DEPLOY";
-        fontMd.setColor(Color.WHITE); fontMd.draw(batch, "3  ENERGY DEFLECTOR SHIELD (" + shieldStatus + ")", 205, 406);
+        fontMd.setColor(Color.WHITE); fontMd.draw(batch, "3  ENERGY DEFLECTOR SHIELD (" + shieldStatus + ")", 205, 404);
         fontSm.setColor(Color.LIGHT_GRAY); fontSm.draw(batch, "Provides full immunity to next enemy impacts", 205, 424);
         fontMd.setColor(shield ? Color.DARK_GRAY : Color.YELLOW); fontMd.draw(batch, "COST: 5 COINS", 595, 415);
 
-        fontMd.setColor(1f, 60/255f, 60/255f, 1f);
+        fontSm.setColor(1f, 60/255f, 60/255f, 1f);
         String exit = "[ PRESS E TO RETURN TO COMBAT ]";
-        layout.setText(fontMd, exit); fontMd.draw(batch, exit, (900 - layout.width) / 2f, 495);
+        layout.setText(fontSm, exit);
+        fontSm.draw(batch, exit, (VIRTUAL_WIDTH - layout.width) / 2f, 495);
         batch.end();
     }
 
@@ -570,19 +602,11 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
     // =========================================================
     @Override
     public boolean keyDown(int k) {
-        // ✨ NOVO: Lógica da tecla "P" para Fullscreen / Windowed
         if (k == Keys.P) {
-            if (Gdx.graphics.isFullscreen()) {
-                // Volta para o modo janela padrão
-                Gdx.graphics.setWindowedMode(900, 600);
-            } else {
-                // Obtém a resolução nativa do monitor atual e ativa o Fullscreen
-                DisplayMode currentMode = Gdx.graphics.getDisplayMode();
-                Gdx.graphics.setFullscreenMode(currentMode);
-            }
+            if (Gdx.graphics.isFullscreen()) Gdx.graphics.setWindowedMode(1280, 720);
+            else Gdx.graphics.setFullscreenMode(Gdx.graphics.getDisplayMode());
             return true;
         }
-
         if (gameState == STATE_GAMEOVER) {
             if (k == Keys.R) { resetGame(); gameState = STATE_COLONY; }
             return true;
@@ -595,7 +619,7 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
             return true;
         }
         if (k == Keys.E) {
-            if (gameState == STATE_SPACE)  shopOpen = !shopOpen;
+            if (gameState == STATE_SPACE) shopOpen = !shopOpen;
             if (gameState == STATE_COLONY && seedShopOpen) { seedShopOpen = false; activePlot = null; }
             return true;
         }
@@ -625,7 +649,7 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
         if (shopOpen && gameState == STATE_SPACE) {
             if ((k == Keys.NUM_1 || k == Keys.NUMPAD_1) && coinCount >= 10 && speedLevel < 5) { coinCount -= 10; speedLevel++; }
             if ((k == Keys.NUM_2 || k == Keys.NUMPAD_2) && coinCount >= 15 && fireLevel < 3)  { coinCount -= 15; fireLevel++; }
-            if ((k == Keys.NUM_3 || k == Keys.NUMPAD_3) && coinCount >= 5  && !shield) { coinCount -= 5; shield = true; shieldTimer = SHIELD_MAX_DURATION; }
+            if ((k == Keys.NUM_3 || k == Keys.NUMPAD_3) && coinCount >= 5  && !shield)        { coinCount -= 5; shield = true; shieldTimer = SHIELD_MAX_DURATION; }
             return true;
         }
         if (gameState == STATE_COLONY && k == Keys.F) {
@@ -659,18 +683,17 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
         return false;
     }
 
-    @Override public boolean keyTyped(char c)                        { return false; }
-    @Override public boolean touchDown(int x,int y,int p,int b)     { return false; }
-    @Override public boolean touchUp(int x,int y,int p,int b)       { return false; }
-    @Override public boolean touchCancelled(int x,int y,int p,int b){ return false; }
-    @Override public boolean touchDragged(int x,int y,int p)        { return false; }
-    @Override public boolean mouseMoved(int x,int y)                { return false; }
-    @Override public boolean scrolled(float x,float y)              { return false; }
+    @Override public boolean keyTyped(char c)                         { return false; }
+    @Override public boolean touchDown(int x,int y,int p,int b)      { return false; }
+    @Override public boolean touchUp(int x,int y,int p,int b)        { return false; }
+    @Override public boolean touchCancelled(int x,int y,int p,int b) { return false; }
+    @Override public boolean touchDragged(int x,int y,int p)         { return false; }
+    @Override public boolean mouseMoved(int x,int y)                  { return false; }
+    @Override public boolean scrolled(float x,float y)               { return false; }
 
-    // ✨ ALTERADO: Quando a janela muda de tamanho (mudar para fullscreen), garante que o jogo continua a usar a resolução virtual correta.
     @Override
     public void resize(int width, int height) {
-        camera.setToOrtho(true, 900, 600);
+        viewport.update(width, height, true);
     }
 
     // =========================================================
@@ -678,8 +701,8 @@ public class GamePanel extends ApplicationAdapter implements InputProcessor {
     // =========================================================
     @Override
     public void dispose() {
-        if (batch != null) batch.dispose();
-        if (sr    != null) sr.dispose();
+        if (batch  != null) batch.dispose();
+        if (sr     != null) sr.dispose();
         if (fontSm != null) fontSm.dispose();
         if (fontMd != null) fontMd.dispose();
         if (fontLg != null) fontLg.dispose();
